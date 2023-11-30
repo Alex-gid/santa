@@ -2,10 +2,13 @@ package dev.cher.santa.service;
 
 import com.vdurmont.emoji.EmojiParser;
 import dev.cher.santa.config.BotConfig;
+import dev.cher.santa.model.Ads;
+import dev.cher.santa.model.AdsRepository;
 import dev.cher.santa.model.User;
 import dev.cher.santa.model.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
@@ -31,7 +34,8 @@ import java.util.List;
 @Component
 public class TelegramBot extends TelegramLongPollingBot {
     private final UserRepository userRepository;
-    final BotConfig config;
+    private final BotConfig config;
+    private final AdsRepository adsRepository;
     static final String image = "https://i.ibb.co/FKFBH6B/razdel-v-razrabotke-1.jpg";
     static final String HELP_TEXT = "This bot is created to demonstrate Spring capabilities. \n\n" +
             "You can execute commands from the main menu on the left or by typing a command: \n\n" +
@@ -45,7 +49,7 @@ public class TelegramBot extends TelegramLongPollingBot {
     static final String NO_BUTTON = "NO_BUTTON";
 
     @Autowired
-    public TelegramBot(BotConfig config, UserRepository userRepository) {
+    public TelegramBot(BotConfig config, UserRepository userRepository, AdsRepository adsRepository) {
         this.config = config;
         List<BotCommand> listOfCommands = new ArrayList<>();
         listOfCommands.add(new BotCommand("/start", "Все подарки в разработке, пожалуйста обратитесь попозже Хо-Хо-Хо"));
@@ -59,6 +63,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             log.error("Error setting bot's commands list " + e.getMessage());
         }
         this.userRepository = userRepository;
+        this.adsRepository = adsRepository;
     }
 
     @Override
@@ -244,10 +249,21 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private void prepareAndSendMessage (long chatId, String textToSend) {
+    private void prepareAndSendMessage(long chatId, String textToSend) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(textToSend);
         executeMessage(message);
+    }
+
+    @Scheduled(cron = "${cron.scheduled}") //сек мин час дата месяц деньнедели
+    private void sendAds() {
+        var ads = adsRepository.findAll();
+        var users = userRepository.findAll();
+        for (Ads ad : ads) {
+            for (User user : users) {
+                prepareAndSendMessage(user.getChatId(), ad.getAd());
+            }
+        }
     }
 }
