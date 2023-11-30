@@ -1,0 +1,6 @@
+dev\cher\santa\model\UserRepository.class
+dev\cher\santa\service\TelegramBot.class
+dev\cher\santa\config\BotInitializer.class
+dev\cher\santa\SantaApplication.class
+dev\cher\santa\config\BotConfig.class
+dev\cher\santa\model\User.class
