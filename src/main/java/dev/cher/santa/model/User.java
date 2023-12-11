@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
+import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 
@@ -22,5 +23,9 @@ public class User {
     private String lastName;
     private String userName;
     private Timestamp registeredAt;
+    private String state;
+    private String fullName;
+    @Column(length = 1000)
+    private String present;
 
 }
