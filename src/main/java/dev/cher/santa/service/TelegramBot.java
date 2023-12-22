@@ -141,9 +141,8 @@ public class TelegramBot extends TelegramLongPollingBot {
         if (update.hasCallbackQuery()) {
 
             long chaId = update.getCallbackQuery().getMessage().getChatId();
-            BotCallBack botCallBack = BotCallBack.fromString(update.getCallbackQuery().getData());
 
-            switch (botCallBack) {
+            switch (BotCallBack.fromString(update.getCallbackQuery().getData())) {
                 case YES_BUTTON:
                     String text = EmojiParser.parseToUnicode(":christmas_tree:Отлично, " + update.getCallbackQuery().getFrom().getFirstName() + ", теперь ты в деле!:christmas_tree:\n" +
                             "Самое время объяснить тебе что к чему – ты же наверняка не новичок в этом деле? А даже если и так – это не сложно!\n" +
