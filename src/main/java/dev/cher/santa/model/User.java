@@ -28,4 +28,7 @@ public class User {
     @Column(length = 1000)
     private String present;
 
+    private Long secretSantaId;
+    private Long giftReceiverId;
+
 }

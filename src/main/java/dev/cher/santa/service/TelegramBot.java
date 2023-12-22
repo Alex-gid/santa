@@ -2,34 +2,31 @@ package dev.cher.santa.service;
 
 import com.vdurmont.emoji.EmojiParser;
 import dev.cher.santa.config.BotConfig;
-import dev.cher.santa.model.Ads;
-import dev.cher.santa.model.AdsRepository;
 import dev.cher.santa.model.User;
 import dev.cher.santa.model.UserRepository;
+import dev.cher.santa.util.BotCallBack;
+import dev.cher.santa.util.BotImage;
+import dev.cher.santa.util.KeyboardUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static dev.cher.santa.util.MessageUtils.*;
 
 @Slf4j
 @Component
@@ -38,31 +35,14 @@ public class TelegramBot extends TelegramLongPollingBot {
     private final UserService userService;
     private final UserRepository userRepository;
     private final BotConfig config;
-    private final AdsRepository adsRepository;
-    static final String IMAGE = "https://i.ibb.co/FKFBH6B/razdel-v-razrabotke-1.jpg";
-    static final String IMAGE_ONE = "https://i.ibb.co/mR3kZkG/one.png";
-    static final String IMAGE_TWO = "https://i.ibb.co/zRKVsH8/two.png";
-    static final String IMAGE_THREE = "https://i.ibb.co/vhGZ3jW/three.png";
-    static final String IMAGE_FOUR = "https://i.ibb.co/hW3g7cQ/four.png";
-    static final String IMAGE_FIVE = "https://i.ibb.co/yy8ym15/five.png";
-    static final String IMAGE_SIX = "https://i.ibb.co/1d5vK2J/six.png";
-    static final String IMAGE_SEVEN = "https://i.ibb.co/G9frPPy/seven.png";
-    static final String IMAGE_EIGHT = "https://i.ibb.co/6J4fwdn/eight.png";
-    static final String IMAGE_HELP = "https://i.ibb.co/P6NjbfT/help.png";
-    static final String IMAGE_DEVELOPER = "https://i.ibb.co/w4DnpHr/developer.png";
-    static final String IMAGE_END = "https://i.ibb.co/H4kscxP/end.png";
     static final String HELP_TEXT = "Этот бот создан исключительно ради  забавы. \n\n" +
             "В меню присутствует следующий список команд: \n\n" +
             "Type /start начать всё с начала \n\n" +
             "Type /present нажимая на эту команду ты сможешь написать подарок который ты хочешь, да, если что, то можно поменять, функция доступна до 18.12\n\n" +
             "Type /help Вызов меню с подсказками \n\n" +
             "Type /developer если что-то сломалось можно написать разработчику он починит и поможет\n\n";
-
-    static final String YES_BUTTON = "YES_BUTTON";
-    static final String NO_BUTTON = "NO_BUTTON";
-
     @Autowired
-    public TelegramBot(UserService userService, BotConfig config, UserRepository userRepository, AdsRepository adsRepository) {
+    public TelegramBot(UserService userService, BotConfig config, UserRepository userRepository) {
         this.userService = userService;
         this.config = config;
         List<BotCommand> listOfCommands = new ArrayList<>();
@@ -76,19 +56,16 @@ public class TelegramBot extends TelegramLongPollingBot {
             log.error("Error setting bot's commands list " + e.getMessage());
         }
         this.userRepository = userRepository;
-        this.adsRepository = adsRepository;
     }
 
     @Override
     public String getBotUsername() {
         return config.getBotName();
     }
-
     @Override
     public String getBotToken() {
         return config.getBotToken();
     }
-
     @Override
     public void onUpdateReceived(Update update) {
 
@@ -108,12 +85,22 @@ public class TelegramBot extends TelegramLongPollingBot {
                 return;
             }
 
+            if (userState != null && "VOTING_FOR_CORPORATE_YES".equals(userState.getState())) {
+                votingForCorporateYes(userState);
+                return;
+            }
+
+            if (userState != null && "VOTING_FOR_CORPORATE_NO".equals(userState.getState())) {
+                votingForCorporateNo(userState);
+                return;
+            }
+
             if (messageText.contains("/send") && config.getOwnerId() == chatId) {
                 var textToSend = EmojiParser.parseToUnicode(messageText.substring(messageText.indexOf(" ")));
                 var users = userRepository.findAll();
 
                 for (User user : users) {
-                    prepareAndSendMessage(user.getChatId(), textToSend);
+                    prepareAndSendMessage(this, user.getChatId(), textToSend);
                 }
             } else {
 
@@ -123,8 +110,8 @@ public class TelegramBot extends TelegramLongPollingBot {
                         startCommandReceived(chatId, update.getMessage().getChat().getFirstName());
                         break;
                     case "/help":
-                        sendPhoto(chatId, IMAGE_HELP);
-                        prepareAndSendMessage(chatId, HELP_TEXT);
+                        sendPhoto(this, chatId, BotImage.IMAGE_HELP.getImageUrl());
+                        prepareAndSendMessage(this, chatId, HELP_TEXT);
                         break;
                     case "/send":
                         break;
@@ -132,34 +119,31 @@ public class TelegramBot extends TelegramLongPollingBot {
                         register(chatId);
                         break;
                     case "/present":
+//                        prepareAndSendMessage(chatId, "Регистрация подарков закрыта, Хо-Хо-Хо");
+
                         userState = userRepository.findById(chatId).orElse(new User());
                         userState.setState("AWAITING_FIO");
                         userRepository.save(userState);
-                        sendPhoto(chatId, IMAGE_FOUR);
-                        prepareAndSendMessage(chatId, "Отлично, пиши Фамилию и Имя, прямо сообщением, не стесняйся)\n\nПомни чтобы Санта смог тебя найти ему нужны корректные ФИО, а иначе есть шанс остаться без подарка)");
+                        sendPhoto(this, chatId, BotImage.IMAGE_FOUR.getImageUrl());
+
+                        prepareAndSendMessage(this, chatId, "Отлично, пиши Фамилию и Имя, прямо сообщением, не стесняйся)\n\nПомни чтобы Санта смог тебя найти ему нужны корректные ФИО, а иначе есть шанс остаться без подарка)");
                         break;
                     case "/developer":
-                        sendPhoto(chatId, IMAGE_DEVELOPER);
-                        prepareAndSendMessage(chatId, "пока в личку @aleksandr_cherkasov, если время хватит допилю нормально)");
+                        sendPhoto(this, chatId, BotImage.IMAGE_DEVELOPER.getImageUrl());
+                        prepareAndSendMessage(this, chatId, "пока в личку @aleksandr_cherkasov, если время хватит допилю нормально)");
                         break;
                     default:
-                        prepareAndSendMessage(chatId, "Я всего лишь бот для Тайного Санты, если есть вопросы/пожелания нажмите /developer и мой хозяин вас услышит");
-
+                        prepareAndSendMessage(this, chatId, "Я всего лишь бот для Тайного Санты, если есть вопросы/пожелания нажмите /developer и мой хозяин вас услышит");
                 }
-
-
             }
         }
 
-
         if (update.hasCallbackQuery()) {
 
-            String callBackData = update.getCallbackQuery().getData();
-            long messageId = update.getCallbackQuery().getMessage().getMessageId();
             long chaId = update.getCallbackQuery().getMessage().getChatId();
+            BotCallBack botCallBack = BotCallBack.fromString(update.getCallbackQuery().getData());
 
-            switch (callBackData) {
-
+            switch (botCallBack) {
                 case YES_BUTTON:
                     String text = EmojiParser.parseToUnicode(":christmas_tree:Отлично, " + update.getCallbackQuery().getFrom().getFirstName() + ", теперь ты в деле!:christmas_tree:\n" +
                             "Самое время объяснить тебе что к чему – ты же наверняка не новичок в этом деле? А даже если и так – это не сложно!\n" +
@@ -174,10 +158,10 @@ public class TelegramBot extends TelegramLongPollingBot {
                             "Нажимая Точно нет! ты можешь удалить себя из праздника :deer:\n");
                     SendMessage sendMessage = new SendMessage();
                     sendMessage.setChatId(String.valueOf(chaId));
-                    sendPhoto(chaId, IMAGE_TWO);
+                    sendPhoto(this, chaId, BotImage.IMAGE_TWO.getImageUrl());
                     sendMessage.setText(text);
-                    sendMessage.setReplyMarkup(createYesNoButtonsInMessage("Точно да!", "Точно да!", "Точно нет", NO_BUTTON));
-                    executeMessage(sendMessage);
+                    sendMessage.setReplyMarkup(KeyboardUtils.createYesNoButtonsInMessage("Точно да!", "Точно да!", "Точно нет", BotCallBack.NO_BUTTON.getCallback()));
+                    executeMessage(this, sendMessage);
                     break;
 
                 case NO_BUTTON:
@@ -185,13 +169,53 @@ public class TelegramBot extends TelegramLongPollingBot {
                             "Если не хочешь, чтобы тебя превратили в оленя :deer:, подумай ещё раз… хо-хо-хо\n");
                     SendMessage sendMessageNoButton = new SendMessage();
                     sendMessageNoButton.setChatId(String.valueOf(chaId));
-                    sendPhoto(chaId, IMAGE_SEVEN);
+                    sendPhoto(this, chaId, BotImage.IMAGE_SEVEN.getImageUrl());
                     sendMessageNoButton.setText(textNoButton);
-                    sendMessageNoButton.setReplyMarkup(createYesNoButtonsInMessage("Не хочу быть оленем(", "Не хочу быть оленем(", "До свидания", "До свидания"));
-                    executeMessage(sendMessageNoButton);
+                    sendMessageNoButton.setReplyMarkup(KeyboardUtils.createYesNoButtonsInMessage(
+                            "Не хочу быть оленем(", BotCallBack.NO_BUTTON_NE_HOCHU.getCallback(),
+                            "До свидания", BotCallBack.NO_BUTTON_BUY.getCallback()));
+                    executeMessage(this, sendMessageNoButton);
                     break;
 
-                case "Не хочу быть оленем(":
+                case VOTING_FOR_CORPORATE_YES:
+                    Optional<User> userStateOpt = userRepository.findById(chaId);
+                    if (userStateOpt.isPresent()) {
+                        User userState = userStateOpt.get();
+                        userState.setState("Yes");
+                        userRepository.save(userState);
+                    }
+
+                    sendPhoto(this, chaId, BotImage.IMAGE_SANTA_END.getImageUrl());
+                    prepareAndSendMessage(this, chaId, "Спасибо, за участие в Secret Santa авантюре!" +
+                            "\nБлагодаря тебе и всем участникам, декабрь стал ярче и интереснее." +
+                            "\n\nВот уже на пороге Новый Год, время чудес и новых начинаний." +
+                            "\nПусть он принесёт много радостных моментов, успехов и исполнения самых заветных желаний." +
+                            "\n\nОт всей души желаем тебе счастливого Нового года!" +
+                            "\nПусть он будет полон счастья, здоровья, любви и новых свершений!");
+                    log.info("голосование ЗА " + update.getCallbackQuery().getFrom().getFirstName());
+                    System.out.println(update.getCallbackQuery().getFrom().getFirstName() + " проголосовал ЗА");
+                    break;
+
+                case VOTING_FOR_CORPORATE_NO:
+                    Optional<User> userStateOptNO = userRepository.findById(chaId);
+                    if (userStateOptNO.isPresent()) {
+                        User userState = userStateOptNO.get();
+                        userState.setState("NO");
+                        userRepository.save(userState);
+                    }
+
+                    sendPhoto(this, chaId, BotImage.IMAGE_SANTA_END.getImageUrl());
+                    prepareAndSendMessage(this, chaId, "Спасибо, за участие в Secret Santa авантюре!" +
+                            "\nБлагодаря тебе и всем участникам, декабрь стал ярче и интереснее." +
+                            "\n\nВот уже на пороге Новый Год, время чудес и новых начинаний." +
+                            "\nПусть он принесёт много радостных моментов, успехов и исполнения самых заветных желаний." +
+                            "\n\nОт всей души желаем тебе счастливого Нового года!" +
+                            "\nПусть он будет полон счастья, здоровья, любви и новых свершений!");
+                    log.info("голосование ЗА " + update.getCallbackQuery().getFrom().getFirstName());
+                    System.out.println(update.getCallbackQuery().getFrom().getFirstName() + " проголосовал ПРОТИВ");
+                    break;
+
+                case NO_BUTTON_NE_HOCHU:
                     String text1 = EmojiParser.parseToUnicode("Никогда не поздно передумать :santa:\n" +
                             "Правила очень просты:\n\n" +
                             "1.  Мы знакомимся :santa:\n" +
@@ -202,23 +226,25 @@ public class TelegramBot extends TelegramLongPollingBot {
                             "Чтобы принять участие нажимай кнопку : Ура! Я не олень! :deer: \n");
                     SendMessage send1 = new SendMessage();
                     send1.setChatId(String.valueOf(chaId));
-                    sendPhoto(chaId, IMAGE_EIGHT);
+                    sendPhoto(this, chaId, BotImage.IMAGE_EIGHT.getImageUrl());
                     send1.setText(text1);
-                    send1.setReplyMarkup(createYesNoButtonsInMessage("Ура! Я не олень!", "Точно да!", "До свидания", "До свидания"));
-                    executeMessage(send1);
+                    send1.setReplyMarkup(KeyboardUtils.createYesNoButtonsInMessage(
+                            "Ура! Я не олень!", BotCallBack.NO_BUTTON_NE_HOCHU_YES.getCallback(),
+                            "До свидания", BotCallBack.NO_BUTTON_BUY.getCallback()));
+                    executeMessage(this, send1);
                     break;
 
-                case "До свидания":
+                case NO_BUTTON_BUY:
                     String reset = EmojiParser.parseToUnicode("Если надумаешь вернуться, в MENU есть кнопка ZANOVO\nС Наступающим Новым Годом! :deer: ");
                     SendMessage sendReset = new SendMessage();
                     sendReset.setChatId(String.valueOf(chaId));
-                    sendPhoto(chaId, IMAGE_END);
+                    sendPhoto(this, chaId, BotImage.IMAGE_END.getImageUrl());
                     sendReset.setText(reset);
-                    executeMessage(sendReset);
+                    executeMessage(this, sendReset);
                     userService.deleteUser(chaId);
                     break;
 
-                case "Точно да!":
+                case NO_BUTTON_NE_HOCHU_YES:
                     String textYes = EmojiParser.parseToUnicode("Начинаем готовиться к магическим деяниям! \n" +
                             "Чтобы получить подарок нужно подарить подарок, всё просто! :santa: :gift:\n " +
                             "Чтобы твой Санта не тыкал пальцем в небо, ты можешь написать что ты хочешь, а можешь ничего не писать, пусть гадает.\n\n" +
@@ -226,10 +252,27 @@ public class TelegramBot extends TelegramLongPollingBot {
                             "Нажми на неё и выбери пункт HOCHU PODAROK!");
                     SendMessage messageYes = new SendMessage();
                     messageYes.setChatId(String.valueOf(chaId));
-                    sendPhoto(chaId, IMAGE_THREE);
+                    sendPhoto(this, chaId, BotImage.IMAGE_THREE.getImageUrl());
                     messageYes.setText(textYes);
-                    executeMessage(messageYes);
+                    executeMessage(this, messageYes);
                     break;
+                case BUTTON_TUROVSKY_YES:
+                    String textDA = EmojiParser.parseToUnicode("Пиши в личку @aleksandr_cherkasov что ты хочешь на НГ, что-нибудь придумаю... ");
+                    SendMessage messageDA = new SendMessage();
+                    messageDA.setChatId(String.valueOf(chaId));
+                    sendPhoto(this, chaId, BotImage.IMAGE_FACEPALM.getImageUrl());
+                    messageDA.setText(textDA);
+                    executeMessage(this, messageDA);
+                    break;
+                case BUTTON_TUROVSKY_NO:
+                    String textNET = EmojiParser.parseToUnicode("На нет и суда нет");
+                    SendMessage messageNET = new SendMessage();
+                    messageNET.setChatId(String.valueOf(chaId));
+                    sendPhoto(this, chaId, BotImage.IMAGE_FACEPALM_NO.getImageUrl());
+                    messageNET.setText(textNET);
+                    executeMessage(this, messageNET);
+                    break;
+
             }
         }
     }
@@ -238,8 +281,8 @@ public class TelegramBot extends TelegramLongPollingBot {
         userState.setPresent(present);
         userState.setState(null);
         userRepository.save(userState);
-        sendPhoto(userState.getChatId(), IMAGE_SIX);
-        prepareAndSendMessage(userState.getChatId(), "Желаемый подарок сохранен: " + present +
+        sendPhoto(this, userState.getChatId(), BotImage.IMAGE_SIX.getImageUrl());
+        prepareAndSendMessage(this, userState.getChatId(), "Желаемый подарок сохранен: " + present +
                 "\n\nЕсли всё перепуталось, то можешь начать заново нажав /present. " +
                 "\n\nЕсли же всё хорошо, то спасибо за участие) " +
                 "\nТы узнаешь кому ты даришь подарок 18.12." +
@@ -251,13 +294,46 @@ public class TelegramBot extends TelegramLongPollingBot {
         userState.setFullName(text);
         userState.setState("AWAITING_PRESENT");
         userRepository.save(userState);
-        sendPhoto(userState.getChatId(), IMAGE_FIVE);
-        prepareAndSendMessage(userState.getChatId(),
+        sendPhoto(this, userState.getChatId(), BotImage.IMAGE_FIVE.getImageUrl());
+        prepareAndSendMessage(this, userState.getChatId(),
                 "Твоему Тайному Санте придёт: " + "\n\n" + text + "\n\n" +
                         "А теперь пиши что ты хочешь на Получить от Санты " +
                         "\nМожешь прям ссылку отправить мне) " +
                         "\nПомни об ограничении бюджета (500р)\n");
     }
+
+    private void votingForCorporateYes(User userState) {
+        userState.setState("YES");
+        userRepository.save(userState);
+        sendPhoto(this, userState.getChatId(), BotImage.IMAGE_SANTA_END.getImageUrl());
+        prepareAndSendMessage(this, userState.getChatId(), "Спасибо, за участие в Secret Santa авантюре!" +
+                "\nБлагодаря тебе и всем участникам, декабрь стал ярче и интереснее." +
+                "\n\nВот уже на пороге Новый Год, время чудес и новых начинаний." +
+                "\nПусть он принесёт много радостных моментов, успехов и исполнения самых заветных желаний." +
+                "\n\nОт всей души желаем тебе счастливого Нового года!" +
+                "\nПусть он будет полон счастья, здоровья, любви и новых свершений!");
+        log.info("голосование ЗА " + userState.getFullName());
+        System.out.println(userState.getFullName() + " проголосовал ЗА");
+
+
+    }
+
+    private void votingForCorporateNo(User userState) {
+        userState.setState("NO");
+        userRepository.save(userState);
+        sendPhoto(this, userState.getChatId(), BotImage.IMAGE_SANTA_END.getImageUrl());
+        prepareAndSendMessage(this, userState.getChatId(), "Спасибо, за участие в Secret Santa авантюре!" +
+                "\nБлагодаря тебе и всем участникам, декабрь стал ярче и интереснее." +
+                "\n\nВот уже на пороге Новый Год, время чудес и новых начинаний." +
+                "\nПусть он принесёт много радостных моментов, успехов и исполнения самых заветных желаний." +
+                "\nОт всей души желаем тебе счастливого Нового года!" +
+                "\nПусть он будет полон счастья, здоровья, любви и новых свершений!");
+        log.info("голосование ПРОТИВ " + userState.getFullName());
+        System.out.println(userState.getFullName() + " проголосовал против");
+
+
+    }
+
 
     private void register(long chatId) {
 
@@ -272,11 +348,11 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         var yesButton = new InlineKeyboardButton();
         yesButton.setText("Yes");
-        yesButton.setCallbackData(YES_BUTTON);
+        yesButton.setCallbackData(BotCallBack.YES_BUTTON.getCallback());
 
         var noButton = new InlineKeyboardButton();
         noButton.setText("No");
-        noButton.setCallbackData(NO_BUTTON);
+        noButton.setCallbackData(BotCallBack.NO_BUTTON.getCallback());
 
         rowInLine.add(yesButton);
         rowInLine.add(noButton);
@@ -284,7 +360,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         markupInLine.setKeyboard(rowsInline);
         message.setReplyMarkup(markupInLine);
 
-        executeMessage(message);
+        executeMessage(this, message);
 
     }
 
@@ -317,7 +393,7 @@ public class TelegramBot extends TelegramLongPollingBot {
                         "Попрощайся с грустью и добавь волшебства в наш рабочий коллектив. Ведь дарить подарки — это кайф! " + ":sparkles:" + "\n" + "\n" +
 
                         "В \"Тайном Санте\" каждый из нас станет чуть-чуть Дедом Морозом (или Бабой Ягой, если кто любит приключения " + ":stuck_out_tongue_winking_eye:" + ")." +
-                        "Подарим друг другу улыбки, тепло и возможно, пару нелепых, но забавных сюрпризов." + ":christmas_tree:" + "\n" + "\n" +
+                        "Подарим друг другу улыбки, тепло и возможно, пару нелепых, но забавных сюрпризов." + ":chr istmas_tree:" + "\n" + "\n" +
 
                         "Давайте делать этот Новый год ярче вместе! " + ":star2:" + "\n" + "\n" +
                         "Готов стать частью этой авантюры, жми на кнопку Погнали!");
@@ -326,130 +402,18 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(String.valueOf(chatId));
-        sendPhoto(chatId, IMAGE_ONE);
+        sendPhoto(this, chatId, BotImage.IMAGE_ONE.getImageUrl());
         sendMessage.setText(answer);
-        sendMessage.setReplyMarkup(createYesNoButtonsInMessage("Погнали", YES_BUTTON, "Не, я пас", NO_BUTTON));
-        executeMessage(sendMessage);
+        sendMessage.setReplyMarkup(KeyboardUtils.createYesNoButtonsInMessage("Погнали", BotCallBack.YES_BUTTON.getCallback(), "Не, я пас", BotCallBack.NO_BUTTON.getCallback()));
+        executeMessage(this, sendMessage);
     }
 
-    private void sendPhoto(long chatId, String image) {
-        SendPhoto photo = new SendPhoto();
-        photo.setChatId(String.valueOf(chatId));
-        photo.setPhoto(new InputFile(image));
-
-        try {
-            execute(photo);
-        } catch (TelegramApiException e) {
-            log.error("Error occurred: " + e.getMessage());
-        }
-    }
-
-    private void executeEditMessageText(String text, long chatId, long messageId) {
-        EditMessageText message = new EditMessageText();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(text);
-        message.setMessageId((int) messageId);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error occurred: " + e.getMessage());
-        }
-    }
-
-    private Message executeMessage(SendMessage message) {
-        try {
-            return execute(message);
-        } catch (TelegramApiException e) {
-            log.error("Error occurred: " + e.getMessage());
-            return null;
-        }
-
-    }
-
-    private void prepareAndSendMessage(long chatId, String textToSend) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(EmojiParser.parseToUnicode(textToSend));
-        executeMessage(message);
-    }
-
-    @Scheduled(cron = "${cron.scheduled}") //сек мин час дата месяц деньнедели
-    private void sendAds() {
-        Long adId = 2L;
-        var users = userRepository.findAll();
-        Optional<Ads> adOptional = adsRepository.findById(adId);
-        Ads ad = adOptional.get();
-
-        for (User user : users) {
-            prepareAndSendMessage(user.getChatId(), ad.getAd());
-        }
-    }
-
-//    @Scheduled(cron = "${cron.scheduledsolo}")
-//    private void sendAdToSpecificUser() {
-//        Long adId = 2L;// идентификатор объявления
-//        Long userId = 957450146L;// идентификатор пользователя
-//
-//        Optional<Ads> adOptional = adsRepository.findById(adId);
-//        Optional<User> userOptional = userRepository.findById(userId);
-//
-//        if (!adOptional.isPresent() || !userOptional.isPresent()) {
-//            return; // или обработайте случай, когда объявление или пользователь не найден
-//        }
-//
-//        Ads ad = adOptional.get();
-//        User user = userOptional.get();
-//
-//        prepareAndSendMessage(user.getChatId(), ad.getAd());
-//    }
 
 
-    private InlineKeyboardMarkup createYesNoButtonsInMessage(String buttonOneName, String buttonOneCallback, String buttonTwoName, String buttonTwoCallback) {
 
-        InlineKeyboardButton yesButton = new InlineKeyboardButton();
-        yesButton.setText(buttonOneName);
-        yesButton.setCallbackData(buttonOneCallback);
-        InlineKeyboardButton noButton = new InlineKeyboardButton();
-        noButton.setText(buttonTwoName);
-        noButton.setCallbackData(buttonTwoCallback);
 
-        List<InlineKeyboardButton> rowInLine = new ArrayList<>();
-        InlineKeyboardMarkup markupInline = new InlineKeyboardMarkup();
-        rowInLine.add(yesButton);
-        rowInLine.add(noButton);
 
-        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>();
-        rowsInline.add(rowInLine);
-        markupInline.setKeyboard(rowsInline);
 
-        return markupInline;
 
-    }
 
-//Кнопки в клавиатуре
-
-    private ReplyKeyboardMarkup createButtonsInKeyboard(Long chatId) {
-        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
-
-        List<KeyboardRow> keyboardRows = new ArrayList<>();
-
-        KeyboardRow row = new KeyboardRow();
-        row.add("Все подарки в разработке, пожалуйста обратитесь попозже Хо-Хо-Хо");
-        keyboardRows.add(row);
-
-        row = new KeyboardRow();
-        row.add("Все подарки в разработке, пожалуйста обратитесь попозже Хо-Хо-Хо");
-        keyboardRows.add(row);
-
-        keyboardMarkup.setKeyboard(keyboardRows);
-
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText("Ваш текст сообщения");
-        message.setReplyMarkup(createButtonsInKeyboard(chatId));
-        executeMessage(message);
-        message.setReplyMarkup(keyboardMarkup);
-        return keyboardMarkup;
-    }
 }

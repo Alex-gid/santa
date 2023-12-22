@@ -21,4 +21,10 @@ public class BotConfig {
 
     @Value("${bot.owner}")
     private Long ownerId;
+
+    @Value("${cron.nonscheduled}")
+    private String sheduled;
+
+    @Value("${cron.scheduledTest}")
+    private String sheduledTest;
 }
